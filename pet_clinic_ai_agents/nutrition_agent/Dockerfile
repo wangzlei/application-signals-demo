@@ -15,5 +15,5 @@ EXPOSE 8080
 
 COPY . /app
 
-# Start the application
-CMD ["python", "-m", "nutrition_agent"]
+# Enable OpenTelemetry auto-instrumentation for Application Signals
+CMD ["opentelemetry-instrument", "python", "-m", "nutrition_agent"]
