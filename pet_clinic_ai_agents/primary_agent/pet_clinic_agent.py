@@ -7,63 +7,95 @@ from strands import Agent, tool
 from strands.models import BedrockModel
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from botocore.exceptions import ClientError
+from opentelemetry import trace
 
 BEDROCK_MODEL_ID = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+
+# Get tracer for Application Signals
+tracer = trace.get_tracer(__name__)
 
 @tool
 def get_clinic_hours():
     """Get pet clinic operating hours"""
-    return "Monday-Friday: 8AM-6PM, Saturday: 9AM-4PM, Sunday: Closed. Emergency services available 24/7."
+    with tracer.start_as_current_span("get_clinic_hours") as span:
+        span.set_attribute("tool.name", "get_clinic_hours")
+        return "Monday-Friday: 8AM-6PM, Saturday: 9AM-4PM, Sunday: Closed. Emergency services available 24/7."
 
 @tool
 def get_emergency_contact():
     """Get emergency contact information"""
-    return "Emergency Line: (555) 123-PETS. For life-threatening emergencies, call immediately or visit our 24/7 emergency clinic."
+    with tracer.start_as_current_span("get_emergency_contact") as span:
+        span.set_attribute("tool.name", "get_emergency_contact")
+        return "Emergency Line: (555) 123-PETS. For life-threatening emergencies, call immediately or visit our 24/7 emergency clinic."
 
 @tool
 def get_specialist_referral(specialty):
     """Get information about specialist referrals"""
-    specialists = {
-        "nutrition": "Dr. Smith - Pet Nutrition Specialist (ext. 201)",
-        "surgery": "Dr. Johnson - Veterinary Surgeon (ext. 202)", 
-        "dermatology": "Dr. Brown - Pet Dermatologist (ext. 203)",
-        "cardiology": "Dr. Davis - Veterinary Cardiologist (ext. 204)"
-    }
-    return specialists.get(specialty.lower(), "Please call (555) 123-PETS for specialist referral information.")
+    with tracer.start_as_current_span("get_specialist_referral") as span:
+        span.set_attribute("tool.name", "get_specialist_referral")
+        span.set_attribute("specialty", specialty)
+        specialists = {
+            "nutrition": "Dr. Smith - Pet Nutrition Specialist (ext. 201)",
+            "surgery": "Dr. Johnson - Veterinary Surgeon (ext. 202)", 
+            "dermatology": "Dr. Brown - Pet Dermatologist (ext. 203)",
+            "cardiology": "Dr. Davis - Veterinary Cardiologist (ext. 204)"
+        }
+        result = specialists.get(specialty.lower(), "Please call (555) 123-PETS for specialist referral information.")
+        span.set_attribute("result.found", specialty.lower() in specialists)
+        return result
 
 @tool
 def get_appointment_availability():
     """Check current appointment availability"""
-    return "We have appointments available: Today 3:00 PM, Tomorrow 10:00 AM and 2:30 PM. Call (555) 123-PETS to schedule."
+    with tracer.start_as_current_span("get_appointment_availability") as span:
+        span.set_attribute("tool.name", "get_appointment_availability")
+        return "We have appointments available: Today 3:00 PM, Tomorrow 10:00 AM and 2:30 PM. Call (555) 123-PETS to schedule."
 
 @tool
 def consult_nutrition_specialist(query):
     """Delegate nutrition questions to the specialized nutrition agent."""
-    
-    agent_arn = os.environ.get('NUTRITION_AGENT_ARN')
-    if not agent_arn:
-        return "Nutrition specialist configuration error. Please call (555) 123-PETS ext. 201."
-    
-    try:
-        region = os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
-        session_id = os.environ.get('CURRENT_SESSION_ID') or str(uuid.uuid4())
-        client = boto3.client('bedrock-agentcore', region_name=region)
-        response = client.invoke_agent_runtime(
-            agentRuntimeArn=agent_arn,
-            runtimeSessionId=session_id,
-            qualifier='DEFAULT',
-            payload=json.dumps({'prompt': query}).encode('utf-8')
-        )
-        # Read the streaming response
-        if 'response' in response:
-            body = response['response'].read().decode('utf-8')
-            return body
-        else:
-            return "Our nutrition specialist is experiencing high demand. Please try again in a few moments or call (555) 123-PETS ext. 201."
-    except ClientError as e:
-        return str(e)
-    except Exception as e:
-        return "Unable to reach our nutrition specialist. Please call (555) 123-PETS ext. 201."
+    with tracer.start_as_current_span("consult_nutrition_specialist") as span:
+        span.set_attribute("tool.name", "consult_nutrition_specialist")
+        span.set_attribute("query.length", len(query))
+        
+        agent_arn = os.environ.get('NUTRITION_AGENT_ARN')
+        if not agent_arn:
+            span.set_attribute("error", "missing_agent_arn")
+            return "Nutrition specialist configuration error. Please call (555) 123-PETS ext. 201."
+        
+        span.set_attribute("nutrition.agent.arn", agent_arn)
+        
+        try:
+            region = os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
+            session_id = os.environ.get('CURRENT_SESSION_ID') or str(uuid.uuid4())
+            
+            span.set_attribute("aws.region", region)
+            span.set_attribute("session.id", session_id)
+            
+            client = boto3.client('bedrock-agentcore', region_name=region)
+            response = client.invoke_agent_runtime(
+                agentRuntimeArn=agent_arn,
+                runtimeSessionId=session_id,
+                qualifier='DEFAULT',
+                payload=json.dumps({'prompt': query}).encode('utf-8')
+            )
+            # Read the streaming response
+            if 'response' in response:
+                body = response['response'].read().decode('utf-8')
+                span.set_attribute("response.length", len(body))
+                span.set_attribute("success", True)
+                return body
+            else:
+                span.set_attribute("error", "no_response_body")
+                return "Our nutrition specialist is experiencing high demand. Please try again in a few moments or call (555) 123-PETS ext. 201."
+        except ClientError as e:
+            span.set_attribute("error", "client_error")
+            span.set_attribute("error.message", str(e))
+            return str(e)
+        except Exception as e:
+            span.set_attribute("error", "general_exception")
+            span.set_attribute("error.message", str(e))
+            return "Unable to reach our nutrition specialist. Please call (555) 123-PETS ext. 201."
 
 agent = None
 agent_app = BedrockAgentCoreApp()
@@ -104,18 +136,26 @@ async def invoke(payload, context):
     """
     Invoke the clinic agent with a payload
     """
-    if context and hasattr(context, 'session_id') and context.session_id:
-        os.environ['CURRENT_SESSION_ID'] = context.session_id
-    
-    agent = create_clinic_agent()
-    msg = payload.get('prompt', '')
-    response_data = []
-    
-    async for event in agent.stream_async(msg, context=context):
-        if 'data' in event:
-            response_data.append(event['data'])
-    
-    return ''.join(response_data)
+    with tracer.start_as_current_span("primary_agent_invoke") as span:
+        span.set_attribute("agent.type", "primary_agent")
+        
+        if context and hasattr(context, 'session_id') and context.session_id:
+            os.environ['CURRENT_SESSION_ID'] = context.session_id
+            span.set_attribute("session.id", context.session_id)
+        
+        agent = create_clinic_agent()
+        msg = payload.get('prompt', '')
+        span.set_attribute("prompt.length", len(msg))
+        
+        response_data = []
+        
+        async for event in agent.stream_async(msg, context=context):
+            if 'data' in event:
+                response_data.append(event['data'])
+        
+        response = ''.join(response_data)
+        span.set_attribute("response.length", len(response))
+        return response
 
 if __name__ == "__main__":    
     uvicorn.run(agent_app, host='0.0.0.0', port=8080)
