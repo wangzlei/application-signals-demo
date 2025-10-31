@@ -57,6 +57,30 @@ class PetClinicAgentsStack extends Stack {
                 'bedrock:InvokeModelWithResponseStream'
               ],
               resources: ['*']
+            }),
+            // Application Signals permissions for telemetry
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: [
+                'xray:PutTraceSegments',
+                'xray:PutTelemetryRecords',
+                'xray:GetSamplingRules',
+                'xray:GetSamplingTargets',
+                'xray:GetSamplingStatisticSummaries'
+              ],
+              resources: ['*']
+            }),
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: [
+                'cloudwatch:PutMetricData'
+              ],
+              resources: ['*'],
+              conditions: {
+                StringEquals: {
+                  'cloudwatch:namespace': 'AWS/ApplicationSignals'
+                }
+              }
             })
           ]
         })
@@ -71,6 +95,19 @@ class PetClinicAgentsStack extends Stack {
       directory: '../../pet_clinic_ai_agents/primary_agent'
     });
 
+    // Common Application Signals environment variables
+    const appSignalsEnvVars = {
+      // OpenTelemetry configuration for Application Signals
+      OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4316',
+      OTEL_AWS_APPLICATION_SIGNALS_ENABLED: 'true',
+      OTEL_METRICS_EXPORTER: 'none',
+      OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: 'sqlalchemy,psycopg2,pymysql,sqlite3,aiopg,asyncpg,mysql_connector,system_metrics,google-genai',
+      // Service identification for Application Signals
+      OTEL_SERVICE_NAME: 'bedrock-agents',
+      OTEL_RESOURCE_ATTRIBUTES: `service.name=bedrock-agents,aws.hostedIn.environment=bedrock-agentcore,aws.hostedIn.region=${region}`
+    };
+
     // Deploy nutrition agent with optional environment variable
     const nutritionAgentProps = {
       AgentName: 'nutrition_agent',
@@ -81,12 +118,14 @@ class PetClinicAgentsStack extends Stack {
     
     if (props?.nutritionServiceUrl) {
       nutritionAgentProps.EnvironmentVariables = {
+        ...appSignalsEnvVars,
         NUTRITION_SERVICE_URL: props.nutritionServiceUrl,
-        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: 'sqlalchemy,psycopg2,pymysql,sqlite3,aiopg,asyncpg,mysql_connector,system_metrics,google-genai'
+        OTEL_RESOURCE_ATTRIBUTES: `service.name=nutrition-agent,aws.hostedIn.environment=bedrock-agentcore,aws.hostedIn.region=${region}`
       };
     } else {
       nutritionAgentProps.EnvironmentVariables = {
-        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: 'sqlalchemy,psycopg2,pymysql,sqlite3,aiopg,asyncpg,mysql_connector,system_metrics,google-genai'
+        ...appSignalsEnvVars,
+        OTEL_RESOURCE_ATTRIBUTES: `service.name=nutrition-agent,aws.hostedIn.environment=bedrock-agentcore,aws.hostedIn.region=${region}`
       };
     }
     
@@ -99,7 +138,9 @@ class PetClinicAgentsStack extends Stack {
       ExecutionRole: agentCoreRole.roleArn,
       Entrypoint: 'pet_clinic_agent.py',
       EnvironmentVariables: {
-        NUTRITION_AGENT_ARN: nutritionAgent.agentArn
+        ...appSignalsEnvVars,
+        NUTRITION_AGENT_ARN: nutritionAgent.agentArn,
+        OTEL_RESOURCE_ATTRIBUTES: `service.name=primary-agent,aws.hostedIn.environment=bedrock-agentcore,aws.hostedIn.region=${region}`
       }
     });
 
