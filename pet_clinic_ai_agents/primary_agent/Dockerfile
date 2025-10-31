@@ -15,4 +15,5 @@ EXPOSE 8080
 
 COPY . /app
 
-CMD ["python", "-m", "pet_clinic_agent"]
+# Enable OpenTelemetry auto-instrumentation for Application Signals
+CMD ["opentelemetry-instrument", "python", "-m", "pet_clinic_agent"]
