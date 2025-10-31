@@ -30,7 +30,7 @@ jobs:
 
       - name: Run Application observability for AWS Investigation
         id: awsapm
-        uses: mxiamxia/aws-apm-action@main
+        uses: wangzlei/aws-apm-action@main
         with:
           aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
