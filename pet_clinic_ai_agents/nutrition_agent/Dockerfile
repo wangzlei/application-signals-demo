@@ -5,6 +5,9 @@ WORKDIR /app
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
+# Install AWS OpenTelemetry Distro for observability
+RUN pip install --no-cache-dir aws-opentelemetry-distro==0.12.1
+
 # Set environment variables
 ENV DOCKER_CONTAINER=1
 
@@ -16,4 +19,4 @@ EXPOSE 8080
 COPY . /app
 
 # Start the application
-CMD ["python", "-m", "nutrition_agent"]
+CMD ["opentelemetry-instrument", "python", "-m", "nutrition_agent"]

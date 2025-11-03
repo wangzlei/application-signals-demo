@@ -5,6 +5,9 @@ WORKDIR /app
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
+# Install AWS OpenTelemetry Distro for observability
+RUN pip install --no-cache-dir aws-opentelemetry-distro==0.12.1
+
 ENV DOCKER_CONTAINER=1
 
 # Create non-root user
@@ -15,4 +18,4 @@ EXPOSE 8080
 
 COPY . /app
 
-CMD ["python", "-m", "pet_clinic_agent"]
+CMD ["opentelemetry-instrument", "python", "-m", "pet_clinic_agent"]
