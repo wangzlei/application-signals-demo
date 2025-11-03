@@ -57,6 +57,13 @@ class PetClinicAgentsStack extends Stack {
                 'bedrock:InvokeModelWithResponseStream'
               ],
               resources: ['*']
+            }),
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: [
+                'xray:PutTraceSegments'
+              ],
+              resources: ['*']
             })
           ]
         })
