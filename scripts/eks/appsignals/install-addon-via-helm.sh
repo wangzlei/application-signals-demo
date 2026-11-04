@@ -90,6 +90,16 @@ if [ -n "${INSTRUMENTATION_INJECTION_MODE}" ]; then
     echo "Setting instrumentation injection mode: ${INSTRUMENTATION_INJECTION_MODE}"
 fi
 
+# enable-app-signals.sh creates the cloudwatch-agent ServiceAccount (with its IRSA role) via eksctl
+# before this script runs; the chart also renders it, so let Helm adopt the existing object.
+if kubectl get serviceaccount cloudwatch-agent -n amazon-cloudwatch >/dev/null 2>&1; then
+    echo "Adopting existing ServiceAccount amazon-cloudwatch/cloudwatch-agent into the Helm release"
+    kubectl label serviceaccount cloudwatch-agent -n amazon-cloudwatch app.kubernetes.io/managed-by=Helm --overwrite
+    kubectl annotate serviceaccount cloudwatch-agent -n amazon-cloudwatch \
+        meta.helm.sh/release-name=amazon-cloudwatch-observability \
+        meta.helm.sh/release-namespace=amazon-cloudwatch --overwrite
+fi
+
 echo "Running helm install..."
 if ! helm install amazon-cloudwatch-observability "${CHART_PATH}" \
     --namespace amazon-cloudwatch --create-namespace \
