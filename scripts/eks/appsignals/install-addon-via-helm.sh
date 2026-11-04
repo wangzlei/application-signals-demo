@@ -16,7 +16,11 @@
 #                     (default: https://github.com/aws-observability/helm-charts.git), e.g. a fork
 #   INSTRUMENTATION_INJECTION_MODE - value for manager.instrumentationInjectionMode
 #                     (old | injector | comma-separated languages); only set when given, and only
-#                     supported by charts that have this value
+#                     supported by charts that have this value. INTERNAL testing knob
+#   INSTRUMENTATION_GUARD - value for manager.applicationSignals.autoMonitor.instrumentationGuard
+#                     (true | false), the customer switch: true injects Java, Node.js, Python and .NET
+#                     through the OpenTelemetry Injector with the ADOT start-up guard and wins over
+#                     INSTRUMENTATION_INJECTION_MODE; only set when given (chart default: false)
 
 if [ -z "${HELM_CHART_REF}" ]; then
     echo "ERROR: HELM_CHART_REF is required"
@@ -88,6 +92,15 @@ fi
 if [ -n "${INSTRUMENTATION_INJECTION_MODE}" ]; then
     HELM_SET_ARGS+=(--set "manager.instrumentationInjectionMode=${INSTRUMENTATION_INJECTION_MODE}")
     echo "Setting instrumentation injection mode: ${INSTRUMENTATION_INJECTION_MODE}"
+fi
+
+if [ -n "${INSTRUMENTATION_GUARD}" ]; then
+    case "${INSTRUMENTATION_GUARD}" in
+        true|false) ;;
+        *) echo "ERROR: INSTRUMENTATION_GUARD must be true or false, got '${INSTRUMENTATION_GUARD}'"; rm -rf "${HELM_CHARTS_DIR}"; exit 1 ;;
+    esac
+    HELM_SET_ARGS+=(--set "manager.applicationSignals.autoMonitor.instrumentationGuard=${INSTRUMENTATION_GUARD}")
+    echo "Setting instrumentationGuard: ${INSTRUMENTATION_GUARD}"
 fi
 
 # enable-app-signals.sh creates the cloudwatch-agent ServiceAccount (with its IRSA role) via eksctl
